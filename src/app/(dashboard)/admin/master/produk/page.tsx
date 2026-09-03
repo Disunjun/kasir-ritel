@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { archiveProduct, saveProduct } from "@/actions/products";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -84,6 +85,7 @@ export default function ProdukPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadProducts() {
@@ -149,26 +151,19 @@ export default function ProdukPage() {
     setIsSyncing(true);
 
     if (hasSupabaseConfig()) {
-      try {
-        const supabase = createClient();
-        const insertPayload = {
-          sku: payload.sku,
-          name: payload.name,
-          slug: payload.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""),
-          sale_price: payload.salePrice,
-          cost_price: payload.salePrice * 0.7,
-          image_url: "",
-          is_active: payload.active,
-        };
-
-        if (form.id) {
-          await supabase.from("products").update(insertPayload).eq("id", form.id);
-        } else {
-          await supabase.from("products").insert(insertPayload);
-        }
-      } catch {
-        // fallback to local state below when backend is unreachable
+      const result = await saveProduct({
+        id: form.id || undefined,
+        sku: payload.sku,
+        name: payload.name,
+        salePrice: payload.salePrice,
+        active: payload.active,
+      });
+      if (result.error) {
+        setNotice(result.error);
+        setIsSyncing(false);
+        return;
       }
+      setNotice(result.success ?? null);
     }
 
     setProducts((current) => {
@@ -196,8 +191,13 @@ export default function ProdukPage() {
     setShowForm(true);
   };
 
-  const handleDelete = (productId: string) => {
-    setProducts((current) => current.filter((item) => item.id !== productId));
+  const handleDelete = async (productId: string) => {
+    if (hasSupabaseConfig()) {
+      const result = await archiveProduct(productId);
+      setNotice(result.error ?? result.success ?? null);
+      if (result.error) return;
+    }
+    setProducts((current) => current.map((item) => item.id === productId ? { ...item, active: false } : item));
   };
 
   return (
@@ -290,6 +290,7 @@ export default function ProdukPage() {
           </CardContent>
         </Card>
       )}
+      {notice && <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{notice}</div>}
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-4">
