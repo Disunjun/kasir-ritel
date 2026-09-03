@@ -329,6 +329,7 @@ begin
   if auth.uid() is null or p_created_by <> auth.uid() then
     raise exception 'AUTH_REQUIRED';
   end if;
+  if public.current_user_role() <> 'ADMIN' then raise exception 'ADMIN_REQUIRED'; end if;
   if p_from_warehouse_id = p_to_warehouse_id or p_quantity <= 0 then
     raise exception 'INVALID_TRANSFER';
   end if;
@@ -379,6 +380,7 @@ declare
   v_delta numeric;
 begin
   if auth.uid() is null or p_created_by <> auth.uid() then raise exception 'AUTH_REQUIRED'; end if;
+  if public.current_user_role() <> 'ADMIN' then raise exception 'ADMIN_REQUIRED'; end if;
   if p_quantity <= 0 or p_type not in ('PEMBELIAN', 'KOREKSI_STOK') then raise exception 'INVALID_ADJUSTMENT'; end if;
   v_delta := case when p_type = 'PEMBELIAN' then p_quantity else -p_quantity end;
 
@@ -403,6 +405,87 @@ $$;
 
 revoke all on function public.adjust_stock(uuid, uuid, numeric, stock_log_type, text, uuid) from public;
 grant execute on function public.adjust_stock(uuid, uuid, numeric, stock_log_type, text, uuid) to authenticated;
+
+create or replace function public.create_stock_opname(
+  p_warehouse_id uuid,
+  p_title text,
+  p_created_by uuid,
+  p_items jsonb
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_opname_id uuid;
+  v_item jsonb;
+  v_product_id uuid;
+  v_system_qty numeric;
+  v_physical_qty numeric;
+begin
+  if auth.uid() is null or p_created_by <> auth.uid() then raise exception 'AUTH_REQUIRED'; end if;
+  if public.current_user_role() <> 'ADMIN' then raise exception 'ADMIN_REQUIRED'; end if;
+  if p_items is null or jsonb_array_length(p_items) = 0 then raise exception 'EMPTY_OPNAME'; end if;
+
+  insert into public.stock_opnames (warehouse_id, title, status, created_by)
+  values (p_warehouse_id, p_title, 'DRAFT', p_created_by)
+  returning id into v_opname_id;
+
+  for v_item in select value from jsonb_array_elements(p_items)
+  loop
+    v_product_id := (v_item->>'productId')::uuid;
+    v_physical_qty := (v_item->>'physicalQty')::numeric;
+    select qty_available into v_system_qty from public.stocks
+      where product_id = v_product_id and warehouse_id = p_warehouse_id;
+    insert into public.stock_opname_items (opname_id, product_id, system_qty, physical_qty, difference_qty, note)
+    values (v_opname_id, v_product_id, coalesce(v_system_qty, 0), v_physical_qty, v_physical_qty - coalesce(v_system_qty, 0), v_item->>'note');
+  end loop;
+  return v_opname_id;
+end;
+$$;
+
+create or replace function public.approve_stock_opname(p_opname_id uuid, p_approved_by uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_item record;
+  v_delta numeric;
+begin
+  if auth.uid() is null or p_approved_by <> auth.uid() then raise exception 'AUTH_REQUIRED'; end if;
+  if public.current_user_role() <> 'ADMIN' then raise exception 'ADMIN_REQUIRED'; end if;
+  if not exists (select 1 from public.stock_opnames where id = p_opname_id and status = 'DRAFT') then raise exception 'OPNAME_NOT_FOUND'; end if;
+
+  for v_item in
+    select o.warehouse_id, i.product_id, i.difference_qty
+    from public.stock_opnames o join public.stock_opname_items i on i.opname_id = o.id
+    where o.id = p_opname_id
+  loop
+    v_delta := v_item.difference_qty;
+    insert into public.stocks (product_id, warehouse_id, qty_available)
+    values (v_item.product_id, v_item.warehouse_id, greatest(v_delta, 0))
+    on conflict (product_id, warehouse_id)
+    do update set qty_available = public.stocks.qty_available + v_delta, updated_at = now();
+    if exists (select 1 from public.stocks where product_id = v_item.product_id and warehouse_id = v_item.warehouse_id and qty_available < 0) then
+      raise exception 'INVALID_OPNAME_STOCK';
+    end if;
+    if v_delta <> 0 then
+      insert into public.stock_logs (product_id, warehouse_id, type, qty_change, reference_id, created_by)
+      values (v_item.product_id, v_item.warehouse_id, case when v_delta > 0 then 'OPNAME_NAIK'::stock_log_type else 'OPNAME_TURUN'::stock_log_type end, v_delta, p_opname_id, p_approved_by);
+    end if;
+  end loop;
+  update public.stock_opnames set status = 'APPROVED', approved_at = now() where id = p_opname_id;
+  return p_opname_id;
+end;
+$$;
+
+revoke all on function public.create_stock_opname(uuid, text, uuid, jsonb) from public;
+grant execute on function public.create_stock_opname(uuid, text, uuid, jsonb) to authenticated;
+revoke all on function public.approve_stock_opname(uuid, uuid) from public;
+grant execute on function public.approve_stock_opname(uuid, uuid) to authenticated;
 
 -- Row-level security: all browser/API access requires an authenticated user.
 create or replace function public.current_user_role()
