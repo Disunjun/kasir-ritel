@@ -361,6 +361,49 @@ $$;
 revoke all on function public.transfer_stock(uuid, uuid, uuid, numeric, text, uuid) from public;
 grant execute on function public.transfer_stock(uuid, uuid, uuid, numeric, text, uuid) to authenticated;
 
+create or replace function public.adjust_stock(
+  p_product_id uuid,
+  p_warehouse_id uuid,
+  p_quantity numeric,
+  p_type stock_log_type,
+  p_note text,
+  p_created_by uuid
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_log_id uuid;
+  v_delta numeric;
+begin
+  if auth.uid() is null or p_created_by <> auth.uid() then raise exception 'AUTH_REQUIRED'; end if;
+  if p_quantity <= 0 or p_type not in ('PEMBELIAN', 'KOREKSI_STOK') then raise exception 'INVALID_ADJUSTMENT'; end if;
+  v_delta := case when p_type = 'PEMBELIAN' then p_quantity else -p_quantity end;
+
+  insert into public.stocks (product_id, warehouse_id, qty_available)
+  values (p_product_id, p_warehouse_id, greatest(v_delta, 0))
+  on conflict (product_id, warehouse_id)
+  do update set qty_available = public.stocks.qty_available + v_delta, updated_at = now();
+
+  if exists (
+    select 1 from public.stocks
+    where product_id = p_product_id and warehouse_id = p_warehouse_id and qty_available < 0
+  ) then
+    raise exception 'INSUFFICIENT_STOCK';
+  end if;
+
+  insert into public.stock_logs (product_id, warehouse_id, type, qty_change, note, created_by)
+  values (p_product_id, p_warehouse_id, p_type, v_delta, p_note, p_created_by)
+  returning id into v_log_id;
+  return v_log_id;
+end;
+$$;
+
+revoke all on function public.adjust_stock(uuid, uuid, numeric, stock_log_type, text, uuid) from public;
+grant execute on function public.adjust_stock(uuid, uuid, numeric, stock_log_type, text, uuid) to authenticated;
+
 -- Row-level security: all browser/API access requires an authenticated user.
 create or replace function public.current_user_role()
 returns user_role
