@@ -1,8 +1,12 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { createClient, hasSupabaseConfig } from "@/lib/supabase/client";
 
 const opnameData = [
   { ref: "OP-2025-004", product: "Indomie Goreng Ayam Spesial 85g", warehouse: "Gudang Utama (Pusat)", systemQty: 48, actualQty: 52, variance: 4, status: "Sesuai" },
@@ -11,6 +15,25 @@ const opnameData = [
 ];
 
 export default function OpnamePage() {
+  const [items, setItems] = useState(opnameData);
+
+  useEffect(() => {
+    if (!hasSupabaseConfig()) return;
+    const load = async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase.from("stock_opnames").select("id, title, status, created_at, warehouses(name), stock_opname_items(system_qty, physical_qty, products(name))").order("created_at", { ascending: false });
+      if (error || !data) return;
+      setItems(data.map((item) => {
+        const warehouse = Array.isArray(item.warehouses) ? item.warehouses[0] : item.warehouses;
+        const detail = Array.isArray(item.stock_opname_items) ? item.stock_opname_items[0] : item.stock_opname_items;
+        const product = detail && (Array.isArray(detail.products) ? detail.products[0] : detail.products);
+        const systemQty = Number(detail?.system_qty ?? 0);
+        const actualQty = Number(detail?.physical_qty ?? systemQty);
+        return { ref: item.id.slice(0, 8).toUpperCase(), product: product?.name ?? item.title, warehouse: warehouse?.name ?? "Gudang", systemQty, actualQty, variance: actualQty - systemQty, status: actualQty === systemQty ? "Sesuai" : "Selisih" };
+      }));
+    };
+    void load();
+  }, []);
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
@@ -74,7 +97,7 @@ export default function OpnamePage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {opnameData.map((item) => (
+              {items.map((item) => (
                 <TableRow key={item.ref}>
                   <TableCell className="font-medium">{item.ref}</TableCell>
                   <TableCell>{item.product}</TableCell>

@@ -1,8 +1,12 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { createClient, hasSupabaseConfig } from "@/lib/supabase/client";
 
 const stockOutData = [
   { ref: "SK-2025-011", product: "Kopi Susu Bubuk 200g", warehouse: "Toko Lantai 1", qty: 35, date: "2025-09-01", status: "Selesai" },
@@ -11,6 +15,24 @@ const stockOutData = [
 ];
 
 export default function StockOutPage() {
+  const [items, setItems] = useState(stockOutData);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    if (!hasSupabaseConfig()) return;
+    const load = async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase.from("stock_logs").select("id, qty_change, created_at, products(name), warehouses(name)").eq("type", "KOREKSI_STOK").lt("qty_change", 0).order("created_at", { ascending: false });
+      if (error || !data) return;
+      setItems(data.map((item) => {
+        const product = Array.isArray(item.products) ? item.products[0] : item.products;
+        const warehouse = Array.isArray(item.warehouses) ? item.warehouses[0] : item.warehouses;
+        return { ref: item.id.slice(0, 8).toUpperCase(), product: product?.name ?? "Produk", warehouse: warehouse?.name ?? "Gudang", qty: Math.abs(Number(item.qty_change)), date: item.created_at.slice(0, 10), status: "Selesai" };
+      }));
+    };
+    void load();
+  }, []);
+  const filtered = items.filter((item) => `${item.ref} ${item.product}`.toLowerCase().includes(query.toLowerCase()));
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
@@ -55,7 +77,7 @@ export default function StockOutPage() {
         <CardHeader className="flex flex-row items-center justify-between gap-4">
           <CardTitle>Daftar Stok Keluar</CardTitle>
           <div className="flex items-center gap-2">
-            <Input placeholder="Cari produk..." className="w-56" />
+            <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari produk..." className="w-56" />
             <Button variant="secondary">Reset</Button>
           </div>
         </CardHeader>
@@ -73,7 +95,7 @@ export default function StockOutPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {stockOutData.map((item) => (
+              {filtered.map((item) => (
                 <TableRow key={item.ref}>
                   <TableCell className="font-medium">{item.ref}</TableCell>
                   <TableCell>{item.product}</TableCell>
