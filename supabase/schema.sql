@@ -208,6 +208,137 @@ create index if not exists idx_security_logs_user_id on "security_logs" (user_id
 create index if not exists idx_security_logs_created_at on "security_logs" (created_at);
 create index if not exists idx_stock_opnames_warehouse_id on "stock_opnames" (warehouse_id);
 
+-- Row-level security: all browser/API access requires an authenticated user.
+create or replace function public.current_user_role()
+returns user_role
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select role from public.user_profiles where id = auth.uid() and is_active = true;
+$$;
+
+revoke all on function public.current_user_role() from public;
+grant execute on function public.current_user_role() to authenticated;
+
+do $$
+declare
+  table_name text;
+begin
+  foreach table_name in array array[
+    'user_profiles', 'warehouses', 'categories', 'products', 'stocks',
+    'stock_logs', 'stock_transfers', 'security_logs', 'shifts', 'sales',
+    'sale_items', 'cashier_shift_logs', 'stock_opnames', 'stock_opname_items'
+  ] loop
+    execute format('alter table public.%I enable row level security', table_name);
+  end loop;
+end $$;
+
+drop policy if exists "profiles own read" on user_profiles;
+create policy "profiles own read" on user_profiles for select to authenticated
+  using (id = auth.uid() or public.current_user_role() = 'ADMIN');
+drop policy if exists "profiles own insert" on user_profiles;
+create policy "profiles own insert" on user_profiles for insert to authenticated
+  with check (id = auth.uid() and role = 'KASIR');
+drop policy if exists "profiles own update" on user_profiles;
+create policy "profiles own update" on user_profiles for update to authenticated
+  using (id = auth.uid() or public.current_user_role() = 'ADMIN')
+  with check (
+    public.current_user_role() = 'ADMIN'
+    or (id = auth.uid() and role = public.current_user_role())
+  );
+
+drop policy if exists "catalog authenticated read" on warehouses;
+create policy "catalog authenticated read" on warehouses for select to authenticated using (true);
+drop policy if exists "catalog admin write" on warehouses;
+create policy "catalog admin write" on warehouses for all to authenticated
+  using (public.current_user_role() = 'ADMIN') with check (public.current_user_role() = 'ADMIN');
+
+drop policy if exists "categories authenticated read" on categories;
+create policy "categories authenticated read" on categories for select to authenticated using (true);
+drop policy if exists "categories admin write" on categories;
+create policy "categories admin write" on categories for all to authenticated
+  using (public.current_user_role() = 'ADMIN') with check (public.current_user_role() = 'ADMIN');
+
+drop policy if exists "products authenticated read" on products;
+create policy "products authenticated read" on products for select to authenticated using (true);
+drop policy if exists "products admin write" on products;
+create policy "products admin write" on products for all to authenticated
+  using (public.current_user_role() = 'ADMIN') with check (public.current_user_role() = 'ADMIN');
+
+drop policy if exists "stocks authenticated read" on stocks;
+create policy "stocks authenticated read" on stocks for select to authenticated using (true);
+drop policy if exists "stocks admin write" on stocks;
+create policy "stocks admin write" on stocks for all to authenticated
+  using (public.current_user_role() = 'ADMIN') with check (public.current_user_role() = 'ADMIN');
+
+drop policy if exists "stock logs authenticated read" on stock_logs;
+create policy "stock logs authenticated read" on stock_logs for select to authenticated
+  using (public.current_user_role() in ('ADMIN', 'KASIR'));
+drop policy if exists "stock logs authenticated insert" on stock_logs;
+create policy "stock logs authenticated insert" on stock_logs for insert to authenticated
+  with check (created_by = auth.uid() and public.current_user_role() in ('ADMIN', 'KASIR'));
+
+drop policy if exists "transfers authenticated read" on stock_transfers;
+create policy "transfers authenticated read" on stock_transfers for select to authenticated using (true);
+drop policy if exists "transfers admin write" on stock_transfers;
+create policy "transfers admin write" on stock_transfers for all to authenticated
+  using (public.current_user_role() = 'ADMIN') with check (public.current_user_role() = 'ADMIN');
+
+drop policy if exists "security logs admin read" on security_logs;
+create policy "security logs admin read" on security_logs for select to authenticated
+  using (public.current_user_role() = 'ADMIN');
+drop policy if exists "security logs own insert" on security_logs;
+create policy "security logs own insert" on security_logs for insert to authenticated
+  with check (user_id = auth.uid());
+
+drop policy if exists "shifts own access" on shifts;
+create policy "shifts own access" on shifts for all to authenticated
+  using (user_id = auth.uid() or public.current_user_role() = 'ADMIN')
+  with check (user_id = auth.uid() or public.current_user_role() = 'ADMIN');
+
+drop policy if exists "sales own access" on sales;
+create policy "sales own access" on sales for all to authenticated
+  using (user_id = auth.uid() or public.current_user_role() = 'ADMIN')
+  with check (user_id = auth.uid() or public.current_user_role() = 'ADMIN');
+
+drop policy if exists "sale items authenticated access" on sale_items;
+create policy "sale items authenticated access" on sale_items for select to authenticated
+  using (
+    public.current_user_role() = 'ADMIN'
+    or exists (select 1 from sales s where s.id = sale_id and s.user_id = auth.uid())
+  );
+drop policy if exists "sale items own insert" on sale_items;
+create policy "sale items own insert" on sale_items for insert to authenticated
+  with check (
+    public.current_user_role() = 'ADMIN'
+    or exists (select 1 from sales s where s.id = sale_id and s.user_id = auth.uid())
+  );
+
+drop policy if exists "shift logs own access" on cashier_shift_logs;
+create policy "shift logs own access" on cashier_shift_logs for all to authenticated
+  using (
+    public.current_user_role() = 'ADMIN'
+    or exists (select 1 from shifts s where s.id = shift_id and s.user_id = auth.uid())
+  )
+  with check (
+    public.current_user_role() = 'ADMIN'
+    or exists (select 1 from shifts s where s.id = shift_id and s.user_id = auth.uid())
+  );
+
+drop policy if exists "opnames authenticated read" on stock_opnames;
+create policy "opnames authenticated read" on stock_opnames for select to authenticated using (true);
+drop policy if exists "opnames admin write" on stock_opnames;
+create policy "opnames admin write" on stock_opnames for all to authenticated
+  using (public.current_user_role() = 'ADMIN') with check (public.current_user_role() = 'ADMIN');
+
+drop policy if exists "opname items authenticated read" on stock_opname_items;
+create policy "opname items authenticated read" on stock_opname_items for select to authenticated using (true);
+drop policy if exists "opname items admin write" on stock_opname_items;
+create policy "opname items admin write" on stock_opname_items for all to authenticated
+  using (public.current_user_role() = 'ADMIN') with check (public.current_user_role() = 'ADMIN');
+
 -- Seed example values after auth user creation in Supabase.
 -- admin user should be created in Supabase Auth manually first.
 -- Example seed fields:

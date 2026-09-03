@@ -52,4 +52,5 @@ NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET=product-images
 - `next.config.ts` menggunakan `output: "standalone"` untuk deployment serverless/container-friendly.
 - Security headers diaktifkan pada semua route.
 - Route privat admin/kasir dibatasi dengan middleware dan role guard.
+- `supabase/schema.sql` mengaktifkan RLS untuk seluruh tabel publik. Jalankan ulang bagian schema terbaru di Supabase SQL Editor setelah melakukan perubahan kebijakan.
 - Build wajib diuji dengan `npm run build` sebelum publish.
