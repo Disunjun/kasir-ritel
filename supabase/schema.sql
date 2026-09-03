@@ -1,20 +1,44 @@
 create extension if not exists "uuid-ossp";
 
-create type "user_role" as enum ('ADMIN', 'KASIR');
-create type "shift_status" as enum ('AKTIF', 'SELESAI');
-create type "method_payment" as enum ('TUNAI', 'KARTU', 'QRIS');
-create type "order_status" as enum ('LUNAS', 'BATAL');
-create type "stock_log_type" as enum (
-  'PEMBELIAN',
-  'PENJUALAN',
-  'TRANSFER_MASUK',
-  'TRANSFER_KELUAR',
-  'OPNAME_NAIK',
-  'OPNAME_TURUN',
-  'KOREKSI_STOK'
-);
+do $$ begin
+  create type "user_role" as enum ('ADMIN', 'KASIR');
+exception
+  when duplicate_object then null;
+end $$;
 
-create table "user_profiles" (
+do $$ begin
+  create type "shift_status" as enum ('AKTIF', 'SELESAI');
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$ begin
+  create type "method_payment" as enum ('TUNAI', 'KARTU', 'QRIS');
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$ begin
+  create type "order_status" as enum ('LUNAS', 'BATAL');
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$ begin
+  create type "stock_log_type" as enum (
+    'PEMBELIAN',
+    'PENJUALAN',
+    'TRANSFER_MASUK',
+    'TRANSFER_KELUAR',
+    'OPNAME_NAIK',
+    'OPNAME_TURUN',
+    'KOREKSI_STOK'
+  );
+exception
+  when duplicate_object then null;
+end $$;
+
+create table if not exists "user_profiles" (
   id uuid primary key references auth.users (id) on delete cascade,
   name text not null,
   email text not null unique,
@@ -24,7 +48,7 @@ create table "user_profiles" (
   created_at timestamptz not null default now()
 );
 
-create table "warehouses" (
+create table if not exists "warehouses" (
   id uuid primary key default uuid_generate_v4(),
   code text not null unique,
   name text not null,
@@ -32,7 +56,7 @@ create table "warehouses" (
   created_at timestamptz default now()
 );
 
-create table "categories" (
+create table if not exists "categories" (
   id uuid primary key default uuid_generate_v4(),
   name text not null,
   slug text not null unique,
@@ -40,7 +64,7 @@ create table "categories" (
   created_at timestamptz default now()
 );
 
-create table "products" (
+create table if not exists "products" (
   id uuid primary key default uuid_generate_v4(),
   sku text unique not null,
   barcode text unique,
@@ -55,7 +79,7 @@ create table "products" (
   created_at timestamptz default now()
 );
 
-create table "stocks" (
+create table if not exists "stocks" (
   id uuid primary key default uuid_generate_v4(),
   product_id uuid not null references products (id) on delete cascade,
   warehouse_id uuid not null references warehouses (id) on delete cascade,
@@ -65,7 +89,7 @@ create table "stocks" (
   unique (product_id, warehouse_id)
 );
 
-create table "stock_logs" (
+create table if not exists "stock_logs" (
   id uuid primary key default uuid_generate_v4(),
   product_id uuid not null references products (id),
   warehouse_id uuid not null references warehouses (id),
@@ -77,7 +101,7 @@ create table "stock_logs" (
   created_at timestamptz default now()
 );
 
-create table "stock_transfers" (
+create table if not exists "stock_transfers" (
   id uuid primary key default uuid_generate_v4(),
   product_id uuid not null references products (id),
   from_warehouse_id uuid not null references warehouses (id),
@@ -90,7 +114,7 @@ create table "stock_transfers" (
   check (from_warehouse_id <> to_warehouse_id)
 );
 
-create table "security_logs" (
+create table if not exists "security_logs" (
   id uuid primary key default uuid_generate_v4(),
   user_id uuid references user_profiles (id) on delete set null,
   action text not null,
@@ -99,7 +123,7 @@ create table "security_logs" (
   created_at timestamptz not null default now()
 );
 
-create table "shifts" (
+create table if not exists "shifts" (
   id uuid primary key default uuid_generate_v4(),
   user_id uuid not null references user_profiles (id) on delete restrict,
   status shift_status not null default 'AKTIF',
@@ -114,7 +138,7 @@ create table "shifts" (
   created_at timestamptz default now()
 );
 
-create table "sales" (
+create table if not exists "sales" (
   id uuid primary key default uuid_generate_v4(),
   invoice_number text unique not null,
   shift_id uuid references shifts (id) on delete restrict,
@@ -131,7 +155,7 @@ create table "sales" (
   created_at timestamptz not null default now()
 );
 
-create table "sale_items" (
+create table if not exists "sale_items" (
   id uuid primary key default uuid_generate_v4(),
   sale_id uuid not null references sales (id) on delete cascade,
   product_id uuid not null references products (id),
@@ -143,14 +167,14 @@ create table "sale_items" (
   created_at timestamptz default now()
 );
 
-create table "cashier_shift_logs" (
+create table if not exists "cashier_shift_logs" (
   id uuid primary key default uuid_generate_v4(),
   shift_id uuid references shifts (id) on delete cascade,
   action text not null,
   amount numeric(12,2)
 );
 
-create table "stock_opnames" (
+create table if not exists "stock_opnames" (
   id uuid primary key default uuid_generate_v4(),
   warehouse_id uuid references warehouses (id),
   title text not null,
@@ -160,7 +184,7 @@ create table "stock_opnames" (
   approved_at timestamptz
 );
 
-create table "stock_opname_items" (
+create table if not exists "stock_opname_items" (
   id uuid primary key default uuid_generate_v4(),
   opname_id uuid references stock_opnames (id) on delete cascade,
   product_id uuid references products (id),
