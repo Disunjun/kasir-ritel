@@ -18,6 +18,17 @@ type ProductRecord = {
   active: boolean;
 };
 
+type ProductQueryRow = {
+  id: string;
+  sku: string;
+  name: string;
+  category_id: string | null;
+  sale_price: number | null;
+  is_active: boolean | null;
+  categories: { name: string } | { name: string }[] | null;
+  stocks: { qty_available: number | null }[] | null;
+};
+
 const defaultProducts: ProductRecord[] = [
   {
     id: "p-1",
@@ -80,16 +91,23 @@ export default function ProdukPage() {
 
       try {
         const supabase = createClient();
-        const { data, error } = await supabase.from("products").select("id, sku, name, category_id, sale_price, is_active");
+        const { data, error } = await supabase
+          .from("products")
+          .select("id, sku, name, category_id, sale_price, is_active, categories(name), stocks(qty_available)");
 
         if (!error && data) {
-          const mapped = data.map((item: any) => ({
+          const rows = data as unknown as ProductQueryRow[];
+          const mapped = rows.map((item) => ({
             id: item.id,
             sku: item.sku,
             name: item.name,
-            category: item.category_id ? "Kategori Terhubung" : "Umum",
+            category:
+              (Array.isArray(item.categories) ? item.categories[0]?.name : item.categories?.name) ??
+              (item.category_id ? "Kategori Terhubung" : "Umum"),
             salePrice: Number(item.sale_price ?? 0),
-            stock: 0,
+            stock: Array.isArray(item.stocks)
+              ? item.stocks.reduce((total, stock) => total + Number(stock.qty_available ?? 0), 0)
+              : 0,
             active: Boolean(item.is_active),
           }));
 
@@ -134,7 +152,6 @@ export default function ProdukPage() {
       try {
         const supabase = createClient();
         const insertPayload = {
-          id: payload.id,
           sku: payload.sku,
           name: payload.name,
           slug: payload.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""),
