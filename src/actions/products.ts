@@ -7,8 +7,10 @@ const productSchema = z.object({
   id: z.string().uuid().optional(),
   sku: z.string().trim().min(2).max(80),
   name: z.string().trim().min(2).max(160),
+  categoryId: z.string().uuid().nullable().optional(),
   salePrice: z.number().nonnegative(),
   active: z.boolean(),
+  initialStock: z.record(z.string().uuid(), z.number().nonnegative()).optional(),
 });
 
 function slugify(value: string) {
@@ -38,12 +40,25 @@ export async function saveProduct(input: unknown): Promise<{ error?: string; suc
     sale_price: parsed.data.salePrice,
     cost_price: Number((parsed.data.salePrice * 0.7).toFixed(2)),
     is_active: parsed.data.active,
+    category_id: parsed.data.categoryId ?? null,
   };
   const query = parsed.data.id
     ? supabase.from("products").update(payload).eq("id", parsed.data.id)
     : supabase.from("products").insert(payload);
-  const { error } = await query;
-  return error ? { error: error.message } : { success: parsed.data.id ? "Produk berhasil diperbarui." : "Produk berhasil ditambahkan." };
+  const { data: product, error } = await query.select("id").single();
+  if (error) return { error: error.message };
+
+  if (!parsed.data.id && parsed.data.initialStock) {
+    const stockRows = Object.entries(parsed.data.initialStock)
+      .filter(([, qty]) => qty > 0)
+      .map(([warehouseId, qty]) => ({ product_id: product.id, warehouse_id: warehouseId, qty_available: qty }));
+    if (stockRows.length) {
+      const { error: stockError } = await supabase.from("stocks").insert(stockRows);
+      if (stockError) return { error: stockError.message };
+    }
+  }
+
+  return { success: parsed.data.id ? "Produk berhasil diperbarui." : "Produk berhasil ditambahkan." };
 }
 
 export async function archiveProduct(productId: string): Promise<{ error?: string; success?: string }> {

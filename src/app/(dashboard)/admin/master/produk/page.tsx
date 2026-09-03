@@ -14,6 +14,7 @@ type ProductRecord = {
   sku: string;
   name: string;
   category: string;
+  categoryId?: string | null;
   salePrice: number;
   stock: number;
   active: boolean;
@@ -74,6 +75,7 @@ const emptyForm = {
   sku: "",
   name: "",
   category: "",
+  categoryId: "",
   salePrice: "",
   stock: "",
   active: true,
@@ -86,6 +88,9 @@ export default function ProdukPage() {
   const [form, setForm] = useState(emptyForm);
   const [isSyncing, setIsSyncing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+  const [warehouses, setWarehouses] = useState<{ id: string; name: string }[]>([]);
+  const [initialStock, setInitialStock] = useState<Record<string, string>>({});
 
   useEffect(() => {
     async function loadProducts() {
@@ -106,6 +111,7 @@ export default function ProdukPage() {
             category:
               (Array.isArray(item.categories) ? item.categories[0]?.name : item.categories?.name) ??
               (item.category_id ? "Kategori Terhubung" : "Umum"),
+            categoryId: item.category_id,
             salePrice: Number(item.sale_price ?? 0),
             stock: Array.isArray(item.stocks)
               ? item.stocks.reduce((total, stock) => total + Number(stock.qty_available ?? 0), 0)
@@ -125,7 +131,21 @@ export default function ProdukPage() {
     loadProducts();
   }, []);
 
-  const filteredProducts = useMemo(() => {
+      useEffect(() => {
+        if (!hasSupabaseConfig()) return;
+        const loadCatalog = async () => {
+          const supabase = createClient();
+          const [categoryResult, warehouseResult] = await Promise.all([
+            supabase.from("categories").select("id, name").order("name"),
+            supabase.from("warehouses").select("id, name").order("name"),
+          ]);
+          if (categoryResult.data) setCategories(categoryResult.data);
+          if (warehouseResult.data) setWarehouses(warehouseResult.data);
+        };
+        void loadCatalog();
+      }, []);
+
+      const filteredProducts = useMemo(() => {
     const keyword = query.toLowerCase();
     return products.filter((product) => {
       const matchesQuery =
@@ -151,12 +171,19 @@ export default function ProdukPage() {
     setIsSyncing(true);
 
     if (hasSupabaseConfig()) {
+      const stockPayload: Record<string, number> = {};
+      for (const [warehouseId, value] of Object.entries(initialStock)) {
+        const qty = Number(value);
+        if (qty > 0) stockPayload[warehouseId] = qty;
+      }
       const result = await saveProduct({
         id: form.id || undefined,
         sku: payload.sku,
         name: payload.name,
+        categoryId: form.categoryId || null,
         salePrice: payload.salePrice,
         active: payload.active,
+        initialStock: form.id ? undefined : stockPayload,
       });
       if (result.error) {
         setNotice(result.error);
@@ -184,6 +211,7 @@ export default function ProdukPage() {
       sku: product.sku,
       name: product.name,
       category: product.category,
+      categoryId: product.categoryId ?? "",
       salePrice: String(product.salePrice),
       stock: String(product.stock),
       active: product.active,
@@ -230,12 +258,10 @@ export default function ProdukPage() {
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Kategori</label>
-                <Input
-                  value={form.category}
-                  onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
-                  placeholder="Contoh: Minuman"
-                  required
-                />
+                <select className="h-9 w-full rounded-lg border px-3 text-sm" value={form.categoryId} onChange={(event) => setForm((current) => ({ ...current, categoryId: event.target.value }))}>
+                  <option value="">Pilih kategori</option>
+                  {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                </select>
               </div>
               <div className="space-y-2 md:col-span-2">
                 <label className="text-sm font-medium">Nama Produk</label>
@@ -258,15 +284,15 @@ export default function ProdukPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Stok</label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={form.stock}
-                  onChange={(event) => setForm((current) => ({ ...current, stock: event.target.value }))}
-                  placeholder="25"
-                  required
-                />
+                <label className="text-sm font-medium">Stok Awal per Gudang</label>
+                <div className="space-y-2 rounded-lg border p-3">
+                  {warehouses.map((warehouse) => (
+                    <div key={warehouse.id} className="flex items-center gap-3">
+                      <span className="w-48 text-sm text-slate-600">{warehouse.name}</span>
+                      <Input className="w-32" type="number" min={0} value={initialStock[warehouse.id] ?? ""} onChange={(event) => setInitialStock((current) => ({ ...current, [warehouse.id]: event.target.value }))} placeholder="0" />
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div className="md:col-span-2 flex items-center gap-3">
