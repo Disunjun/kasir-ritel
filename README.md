@@ -43,8 +43,9 @@ NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET=product-images
 ```
 
 4. Pastikan project Supabase sudah menjalankan `supabase/schema.sql`.
-5. Pastikan storage bucket `product-images` sudah dibuat dan policy sesuai kebutuhan.
-6. Deploy.
+5. Jalankan `supabase/seed.sql` untuk mengisi data development gudang, kategori, produk, dan stok.
+6. Pastikan storage bucket `product-images` sudah dibuat dan policy sesuai kebutuhan.
+7. Deploy.
 
 ## Production hardening notes
 
