@@ -53,4 +53,5 @@ NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET=product-images
 - Security headers diaktifkan pada semua route.
 - Route privat admin/kasir dibatasi dengan middleware dan role guard.
 - `supabase/schema.sql` mengaktifkan RLS untuk seluruh tabel publik. Jalankan ulang bagian schema terbaru di Supabase SQL Editor setelah melakukan perubahan kebijakan.
+- Checkout kasir menggunakan fungsi database `checkout_sale` agar penjualan, detail, pengurangan stok, dan log stok tersimpan atomik. Jalankan schema terbaru sebelum menguji checkout live.
 - Build wajib diuji dengan `npm run build` sebelum publish.

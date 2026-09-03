@@ -135,81 +135,24 @@ export async function createSale(input: unknown): Promise<ActionResult> {
     return { error: "Nominal tunai belum mencukupi total transaksi." };
   }
 
-  const productIds = parsed.data.items.map((item) => item.productId);
-  const { data: stockRows, error: stockError } = await supabase
-    .from("stocks")
-    .select("id, product_id, qty_available")
-    .eq("warehouse_id", shift.warehouse_id)
-    .in("product_id", productIds);
+  const invoiceNumber = `TRX-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${Date.now().toString().slice(-6)}`;
+  const { data: checkout, error: checkoutError } = await supabase.rpc("checkout_sale", {
+    p_shift_id: shift.id,
+    p_items: parsed.data.items,
+    p_payment_method: parsed.data.paymentMethod,
+    p_cash_received: parsed.data.paymentMethod === "TUNAI" ? cashReceived : null,
+    p_invoice_number: invoiceNumber,
+    p_subtotal: total,
+  });
 
-  if (stockError) return { error: "Stok tidak dapat diverifikasi." };
-  for (const item of parsed.data.items) {
-    const stock = stockRows?.find((row) => row.product_id === item.productId);
-    if (!stock || Number(stock.qty_available) < item.quantity) {
+  if (checkoutError || !checkout?.[0]) {
+    if (checkoutError?.message.includes("INSUFFICIENT_STOCK")) {
       return { error: "Stok tidak mencukupi untuk salah satu produk." };
     }
-  }
-
-  const invoiceNumber = `TRX-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${Date.now().toString().slice(-6)}`;
-  const { data: sale, error: saleError } = await supabase
-    .from("sales")
-    .insert({
-      invoice_number: invoiceNumber,
-      shift_id: shift.id,
-      warehouse_id: shift.warehouse_id,
-      user_id: user.id,
-      subtotal: total,
-      total_amount: total,
-      payment_method: parsed.data.paymentMethod,
-      cash_received: parsed.data.paymentMethod === "TUNAI" ? cashReceived : null,
-      change_due: parsed.data.paymentMethod === "TUNAI" ? cashReceived - total : null,
-    })
-    .select("id")
-    .single();
-
-  if (saleError || !sale) return { error: saleError?.message ?? "Transaksi gagal disimpan." };
-
-  const { error: itemError } = await supabase.from("sale_items").insert(
-    parsed.data.items.map((item) => ({
-      sale_id: sale.id,
-      product_id: item.productId,
-      quantity: item.quantity,
-      unit_cost: item.unitCost,
-      unit_price: item.unitPrice,
-      subtotal: Number((item.unitPrice * item.quantity).toFixed(2)),
-      total_cost: Number((item.unitCost * item.quantity).toFixed(2)),
-    })),
-  );
-  if (itemError) return { error: itemError.message };
-
-  for (const item of parsed.data.items) {
-    const stock = stockRows?.find((row) => row.product_id === item.productId);
-    if (!stock) return { error: "Stok produk tidak ditemukan saat pembaruan." };
-
-    const { error: updateError } = await supabase
-      .from("stocks")
-      .update({ qty_available: Number(stock.qty_available) - item.quantity, updated_at: new Date().toISOString() })
-      .eq("id", stock.id)
-      .eq("warehouse_id", shift.warehouse_id);
-    if (updateError) return { error: updateError.message };
-
-    const { error: logError } = await supabase.from("stock_logs").insert({
-      product_id: item.productId,
-      warehouse_id: shift.warehouse_id,
-      type: "PENJUALAN",
-      qty_change: -item.quantity,
-      reference_id: sale.id,
-      created_by: user.id,
-    });
-    if (logError) return { error: logError.message };
-  }
-
-  if (parsed.data.paymentMethod === "TUNAI") {
-    const { error: shiftUpdateError } = await supabase
-      .from("shifts")
-      .update({ expected_cash: Number(shift.expected_cash ?? 0) + total })
-      .eq("id", shift.id);
-    if (shiftUpdateError) return { error: shiftUpdateError.message };
+    if (checkoutError?.message.includes("ACTIVE_SHIFT_NOT_FOUND")) {
+      return { error: "Shift aktif tidak ditemukan." };
+    }
+    return { error: checkoutError?.message ?? "Transaksi gagal disimpan." };
   }
 
   return { success: "Transaksi berhasil disimpan.", invoiceNumber };

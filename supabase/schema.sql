@@ -208,6 +208,108 @@ create index if not exists idx_security_logs_user_id on "security_logs" (user_id
 create index if not exists idx_security_logs_created_at on "security_logs" (created_at);
 create index if not exists idx_stock_opnames_warehouse_id on "stock_opnames" (warehouse_id);
 
+create or replace function public.checkout_sale(
+  p_shift_id uuid,
+  p_items jsonb,
+  p_payment_method method_payment,
+  p_cash_received numeric,
+  p_invoice_number text,
+  p_subtotal numeric
+)
+returns table (sale_id uuid, invoice_number text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_warehouse_id uuid;
+  v_sale_id uuid;
+  v_item jsonb;
+  v_product_id uuid;
+  v_quantity numeric;
+  v_unit_price numeric;
+  v_unit_cost numeric;
+  v_expected_cash numeric;
+begin
+  if v_user_id is null then
+    raise exception 'AUTH_REQUIRED';
+  end if;
+
+  select warehouse_id into v_warehouse_id
+  from public.shifts
+  where id = p_shift_id and user_id = v_user_id and status = 'AKTIF'
+  for update;
+
+  if v_warehouse_id is null then
+    raise exception 'ACTIVE_SHIFT_NOT_FOUND';
+  end if;
+
+  if p_items is null or jsonb_array_length(p_items) = 0 then
+    raise exception 'EMPTY_CART';
+  end if;
+
+  insert into public.sales (
+    invoice_number, shift_id, warehouse_id, user_id, subtotal, total_amount,
+    payment_method, cash_received, change_due
+  )
+  values (
+    p_invoice_number, p_shift_id, v_warehouse_id, v_user_id, p_subtotal, p_subtotal,
+    p_payment_method,
+    case when p_payment_method = 'TUNAI' then p_cash_received else null end,
+    case when p_payment_method = 'TUNAI' then p_cash_received - p_subtotal else null end
+  )
+  returning id into v_sale_id;
+
+  for v_item in select value from jsonb_array_elements(p_items)
+  loop
+    v_product_id := (v_item->>'productId')::uuid;
+    v_quantity := (v_item->>'quantity')::numeric;
+    v_unit_price := (v_item->>'unitPrice')::numeric;
+    v_unit_cost := (v_item->>'unitCost')::numeric;
+
+    update public.stocks
+    set qty_available = qty_available - v_quantity, updated_at = now()
+    where product_id = v_product_id
+      and warehouse_id = v_warehouse_id
+      and qty_available >= v_quantity;
+
+    if not found then
+      raise exception 'INSUFFICIENT_STOCK:%', v_product_id;
+    end if;
+
+    insert into public.sale_items (
+      sale_id, product_id, quantity, unit_cost, unit_price, subtotal, total_cost
+    )
+    values (
+      v_sale_id, v_product_id, v_quantity, v_unit_cost, v_unit_price,
+      round(v_unit_price * v_quantity, 2), round(v_unit_cost * v_quantity, 2)
+    );
+
+    insert into public.stock_logs (
+      product_id, warehouse_id, type, qty_change, reference_id, created_by
+    )
+    values (v_product_id, v_warehouse_id, 'PENJUALAN', -v_quantity, v_sale_id, v_user_id);
+  end loop;
+
+  if p_payment_method = 'TUNAI' then
+    select expected_cash into v_expected_cash
+    from public.shifts
+    where id = p_shift_id
+    for update;
+
+    update public.shifts
+    set expected_cash = coalesce(v_expected_cash, 0) + p_subtotal
+    where id = p_shift_id;
+  end if;
+
+  return query select v_sale_id, p_invoice_number;
+end;
+$$;
+
+revoke all on function public.checkout_sale(uuid, jsonb, method_payment, numeric, text, numeric) from public;
+grant execute on function public.checkout_sale(uuid, jsonb, method_payment, numeric, text, numeric) to authenticated;
+
 -- Row-level security: all browser/API access requires an authenticated user.
 create or replace function public.current_user_role()
 returns user_role
