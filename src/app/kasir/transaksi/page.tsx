@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { createClient, hasSupabaseConfig } from "@/lib/supabase/client";
-import { createSale, openShift } from "@/actions/sales";
+import { closeShift, createSale, openShift } from "@/actions/sales";
 
 const fallbackCatalog = [
   { id: "P-001", name: "Indomie Goreng Ayam Spesial", category: "Makanan", price: 3500, stock: 48, barcode: "8998000001001", accent: "from-amber-100 to-orange-200" },
@@ -47,6 +47,10 @@ export default function TransaksiPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [externalPaymentStatus, setExternalPaymentStatus] = useState<"IDLE" | "PROCESSING" | "PAID">("IDLE");
+  const [openShiftDialog, setOpenShiftDialog] = useState(false);
+  const [closeShiftDialog, setCloseShiftDialog] = useState(false);
+  const [openingCash, setOpeningCash] = useState("0");
+  const [actualCash, setActualCash] = useState("");
 
   useEffect(() => {
     if (!hasSupabaseConfig()) return;
@@ -169,9 +173,21 @@ export default function TransaksiPage() {
       return;
     }
     setIsSubmitting(true);
-    const result = await openShift(0);
+    const result = await openShift(Number(openingCash || 0));
     setNotice(result.error ?? result.success ?? null);
     setIsSubmitting(false);
+    if (!result.error) setOpenShiftDialog(false);
+  };
+
+  const handleCloseShift = async () => {
+    setIsSubmitting(true);
+    const result = await closeShift(Number(actualCash || 0));
+    setNotice(result.error ?? result.success ?? null);
+    setIsSubmitting(false);
+    if (!result.error) {
+      setCloseShiftDialog(false);
+      setActualCash("");
+    }
   };
 
   const completeTransaction = async () => {
@@ -239,10 +255,45 @@ export default function TransaksiPage() {
           <h1 className="text-2xl font-bold tracking-tight">Transaksi Penjualan</h1>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleOpenShift} disabled={isSubmitting}>
-            Buka Shift
-          </Button>
-          <Button variant="secondary">Jurnal Shift</Button>
+          <Dialog open={openShiftDialog} onOpenChange={setOpenShiftDialog}>
+            <DialogTrigger render={<Button variant="outline" disabled={isSubmitting}>Buka Shift</Button>} />
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Buka Shift</DialogTitle>
+                <DialogDescription>Masukkan saldo awal kas sebelum mulai melayani transaksi.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Saldo Awal</label>
+                <Input type="number" min="0" value={openingCash} onChange={(event) => setOpeningCash(event.target.value)} />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setOpenShiftDialog(false)}>Batal</Button>
+                <Button onClick={handleOpenShift} disabled={isSubmitting}>
+                  {isSubmitting ? "Membuka..." : "Buka Shift"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={closeShiftDialog} onOpenChange={setCloseShiftDialog}>
+            <DialogTrigger render={<Button variant="secondary" disabled={isSubmitting}>Tutup Shift</Button>} />
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Tutup Shift</DialogTitle>
+                <DialogDescription>Hitung uang fisik di laci dan masukkan nominal aktual untuk rekonsiliasi.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Uang Aktual</label>
+                <Input type="number" min="0" value={actualCash} onChange={(event) => setActualCash(event.target.value)} placeholder="Masukkan nominal aktual" />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setCloseShiftDialog(false)}>Batal</Button>
+                <Button onClick={handleCloseShift} disabled={isSubmitting || !actualCash}>
+                  {isSubmitting ? "Menutup..." : "Konfirmasi Tutup Shift"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Button variant="ghost">Jurnal Shift</Button>
           <Dialog open={openPayment} onOpenChange={setOpenPayment}>
             <DialogTrigger render={<Button>Bayar Sekarang</Button>} />
             <DialogContent className="max-w-md">
