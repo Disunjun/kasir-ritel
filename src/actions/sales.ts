@@ -207,7 +207,7 @@ export async function createSale(input: unknown): Promise<ActionResult> {
   if (parsed.data.paymentMethod === "TUNAI") {
     const { error: shiftUpdateError } = await supabase
       .from("shifts")
-      .update({ expected_cash: Number(shift.expected_cash ?? 0) + cashReceived })
+      .update({ expected_cash: Number(shift.expected_cash ?? 0) + total })
       .eq("id", shift.id);
     if (shiftUpdateError) return { error: shiftUpdateError.message };
   }
