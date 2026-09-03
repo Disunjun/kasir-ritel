@@ -17,6 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { createClient, hasSupabaseConfig } from "@/lib/supabase/client";
 import { closeShift, createSale, openShift } from "@/actions/sales";
+import { ShiftJournalButton } from "@/components/kasir/shift-journal-button";
 
 const fallbackCatalog = [
   { id: "P-001", name: "Indomie Goreng Ayam Spesial", category: "Makanan", price: 3500, stock: 48, barcode: "8998000001001", accent: "from-amber-100 to-orange-200" },
@@ -342,7 +343,7 @@ export default function TransaksiPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-          <Button variant="ghost">Jurnal Shift</Button>
+          <ShiftJournalButton />
           <Dialog open={openPayment} onOpenChange={setOpenPayment}>
             <DialogTrigger render={<Button>Bayar Sekarang</Button>} />
             <DialogContent className="max-w-md">
