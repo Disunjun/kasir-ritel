@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Barcode, CreditCard, Minus, Plus, QrCode, Search, ShoppingCart, Trash2, Wallet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,8 +15,9 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { createClient, hasSupabaseConfig } from "@/lib/supabase/client";
 
-const productCatalog = [
+const fallbackCatalog = [
   { id: "P-001", name: "Indomie Goreng Ayam Spesial", category: "Makanan", price: 3500, stock: 48, barcode: "8998000001001", accent: "from-amber-100 to-orange-200" },
   { id: "P-002", name: "Coca-Cola Original 390ml", category: "Minuman", price: 6500, stock: 19, barcode: "8998000002002", accent: "from-sky-100 to-blue-200" },
   { id: "P-003", name: "Energen Sereal Cokelat", category: "Susu & Cokelat", price: 4200, stock: 12, barcode: "8998000003003", accent: "from-violet-100 to-fuchsia-200" },
@@ -25,7 +26,8 @@ const productCatalog = [
   { id: "P-006", name: "Sampo Antiketombe 180ml", category: "Perawatan", price: 18500, stock: 11, barcode: "8998000006006", accent: "from-rose-100 to-pink-200" },
 ];
 
-type CartItem = (typeof productCatalog)[number] & { quantity: number };
+type CatalogProduct = (typeof fallbackCatalog)[number];
+type CartItem = CatalogProduct & { quantity: number };
 
 const currency = new Intl.NumberFormat("id-ID", {
   style: "currency",
@@ -34,16 +36,54 @@ const currency = new Intl.NumberFormat("id-ID", {
 });
 
 export default function TransaksiPage() {
+  const [productCatalog, setProductCatalog] = useState<CatalogProduct[]>(fallbackCatalog);
   const [query, setQuery] = useState("");
   const [barcode, setBarcode] = useState("");
-  const [cart, setCart] = useState<CartItem[]>([
-    { ...productCatalog[0], quantity: 2 },
-    { ...productCatalog[2], quantity: 1 },
-  ]);
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<"TUNAI" | "KARTU" | "QRIS">("TUNAI");
   const [cashInput, setCashInput] = useState("250000");
   const [openPayment, setOpenPayment] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!hasSupabaseConfig()) return;
+
+    const loadProducts = async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("products")
+        .select("id, name, barcode, sale_price, is_active, categories(name), stocks(qty_available)")
+        .eq("is_active", true)
+        .order("name");
+
+      if (error || !data) {
+        setNotice("Produk live tidak dapat dimuat. Menampilkan katalog demo.");
+        return;
+      }
+
+      const rows = data.map((item) => {
+        const category = Array.isArray(item.categories) ? item.categories[0] : item.categories;
+        const stock = Array.isArray(item.stocks)
+          ? item.stocks.reduce((total, entry) => total + Number(entry.qty_available ?? 0), 0)
+          : 0;
+        return {
+          id: item.id,
+          name: item.name,
+          category: category?.name ?? "Umum",
+          price: Number(item.sale_price ?? 0),
+          stock,
+          barcode: item.barcode ?? "",
+          accent: "from-slate-100 to-slate-200",
+        };
+      });
+
+      setProductCatalog(rows);
+      setCart([]);
+      setNotice(rows.length ? null : "Belum ada produk aktif di database.");
+    };
+
+    void loadProducts();
+  }, []);
 
   const filteredProducts = useMemo(() => {
     const search = query.toLowerCase();
@@ -60,7 +100,7 @@ export default function TransaksiPage() {
   const cashValue = Number(cashInput || 0);
   const change = Math.max(cashValue - subtotal, 0);
 
-  const addToCart = (product: (typeof productCatalog)[number]) => {
+  const addToCart = (product: CatalogProduct) => {
     const existing = cart.find((item) => item.id === product.id);
     const nextQty = existing ? existing.quantity + 1 : 1;
 
