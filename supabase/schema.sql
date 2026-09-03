@@ -310,6 +310,57 @@ $$;
 revoke all on function public.checkout_sale(uuid, jsonb, method_payment, numeric, text, numeric) from public;
 grant execute on function public.checkout_sale(uuid, jsonb, method_payment, numeric, text, numeric) to authenticated;
 
+create or replace function public.transfer_stock(
+  p_product_id uuid,
+  p_from_warehouse_id uuid,
+  p_to_warehouse_id uuid,
+  p_quantity numeric,
+  p_note text,
+  p_created_by uuid
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_transfer_id uuid;
+begin
+  if auth.uid() is null or p_created_by <> auth.uid() then
+    raise exception 'AUTH_REQUIRED';
+  end if;
+  if p_from_warehouse_id = p_to_warehouse_id or p_quantity <= 0 then
+    raise exception 'INVALID_TRANSFER';
+  end if;
+
+  update public.stocks
+  set qty_available = qty_available - p_quantity, updated_at = now()
+  where product_id = p_product_id
+    and warehouse_id = p_from_warehouse_id
+    and qty_available >= p_quantity;
+  if not found then raise exception 'INSUFFICIENT_STOCK'; end if;
+
+  insert into public.stocks (product_id, warehouse_id, qty_available)
+  values (p_product_id, p_to_warehouse_id, p_quantity)
+  on conflict (product_id, warehouse_id)
+  do update set qty_available = public.stocks.qty_available + excluded.qty_available, updated_at = now();
+
+  insert into public.stock_transfers (product_id, from_warehouse_id, to_warehouse_id, quantity, status, note, created_by)
+  values (p_product_id, p_from_warehouse_id, p_to_warehouse_id, p_quantity, 'SELESAI', p_note, p_created_by)
+  returning id into v_transfer_id;
+
+  insert into public.stock_logs (product_id, warehouse_id, type, qty_change, reference_id, created_by, note)
+  values
+    (p_product_id, p_from_warehouse_id, 'TRANSFER_KELUAR', -p_quantity, v_transfer_id, p_created_by, p_note),
+    (p_product_id, p_to_warehouse_id, 'TRANSFER_MASUK', p_quantity, v_transfer_id, p_created_by, p_note);
+
+  return v_transfer_id;
+end;
+$$;
+
+revoke all on function public.transfer_stock(uuid, uuid, uuid, numeric, text, uuid) from public;
+grant execute on function public.transfer_stock(uuid, uuid, uuid, numeric, text, uuid) to authenticated;
+
 -- Row-level security: all browser/API access requires an authenticated user.
 create or replace function public.current_user_role()
 returns user_role
