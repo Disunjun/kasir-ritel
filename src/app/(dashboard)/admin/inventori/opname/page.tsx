@@ -15,15 +15,24 @@ const opnameData = [
   { ref: "OP-2025-005", product: "Coca-Cola Original 390ml", warehouse: "Toko Lantai 1", systemQty: 14, actualQty: 9, variance: -5, status: "Selisih" },
   { ref: "OP-2025-006", product: "Kopi Susu Bubuk 200g", warehouse: "Gudang Cabang Surabaya", systemQty: 18, actualQty: 18, variance: 0, status: "Sesuai" },
 ];
+type OpnameItem = {
+  ref: string;
+  opnameRef: string;
+  product: string;
+  warehouse: string;
+  systemQty: number;
+  actualQty: number;
+  variance: number;
+  status: string;
+};
 
 export default function OpnamePage() {
-  const [items, setItems] = useState(opnameData);
+  const [items, setItems] = useState<OpnameItem[]>(opnameData.map((item) => ({ ...item, opnameRef: item.ref })));
   const [open, setOpen] = useState(false);
   const [products, setProducts] = useState<{ id: string; name: string }[]>([]);
   const [warehouses, setWarehouses] = useState<{ id: string; name: string }[]>([]);
-  const [productId, setProductId] = useState("");
   const [warehouseId, setWarehouseId] = useState("");
-  const [physicalQty, setPhysicalQty] = useState("");
+  const [opnameRows, setOpnameRows] = useState<{ productId: string; physicalQty: string }[]>([{ productId: "", physicalQty: "" }]);
   const [title, setTitle] = useState("Opname Gudang");
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -42,21 +51,31 @@ export default function OpnamePage() {
       if (error || !data) return;
       setItems(data.map((item) => {
         const warehouse = Array.isArray(item.warehouses) ? item.warehouses[0] : item.warehouses;
-        const detail = Array.isArray(item.stock_opname_items) ? item.stock_opname_items[0] : item.stock_opname_items;
-        const product = detail && (Array.isArray(detail.products) ? detail.products[0] : detail.products);
-        const systemQty = Number(detail?.system_qty ?? 0);
-        const actualQty = Number(detail?.physical_qty ?? systemQty);
-        return { ref: item.id, product: product?.name ?? item.title, warehouse: warehouse?.name ?? "Gudang", systemQty, actualQty, variance: actualQty - systemQty, status: actualQty === systemQty ? "Sesuai" : "Selisih" };
-      }));
+        const details = Array.isArray(item.stock_opname_items) ? item.stock_opname_items : [];
+        return details.map((detail, index) => {
+          const product = Array.isArray(detail.products) ? detail.products[0] : detail.products;
+          const systemQty = Number(detail.system_qty ?? 0);
+          const actualQty = Number(detail.physical_qty ?? systemQty);
+          return { ref: `${item.id}-${index}`, opnameRef: item.id, product: product?.name ?? item.title, warehouse: warehouse?.name ?? "Gudang", systemQty, actualQty, variance: actualQty - systemQty, status: actualQty === systemQty ? "Sesuai" : "Selisih" };
+        });
+      }).flat());
     };
     void load();
   }, []);
   const submit = async () => {
     setSaving(true);
-    const result = await createOpname({ warehouseId, title, productId, physicalQty: Number(physicalQty) });
+    const validRows = opnameRows.filter((row) => row.productId && row.physicalQty !== "");
+    const result = await createOpname({
+      warehouseId,
+      title,
+      items: validRows.map((row) => ({ productId: row.productId, physicalQty: Number(row.physicalQty) })),
+    });
     setNotice(result.error ?? result.success ?? null);
     setSaving(false);
-    if (!result.error) setOpen(false);
+    if (!result.error) {
+      setOpen(false);
+      window.location.reload();
+    }
   };
   return (
     <div className="space-y-6">
@@ -68,14 +87,23 @@ export default function OpnamePage() {
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger render={<Button>Mulai Opname</Button>} />
           <DialogContent className="max-w-md">
-            <DialogHeader><DialogTitle>Mulai Stock Opname</DialogTitle><DialogDescription>Catat hasil fisik produk pada satu gudang.</DialogDescription></DialogHeader>
+            <DialogHeader><DialogTitle>Mulai Stock Opname</DialogTitle><DialogDescription>Catat hasil fisik beberapa produk pada satu gudang.</DialogDescription></DialogHeader>
             <div className="space-y-3">
               <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Judul sesi" />
               <select className="h-9 w-full rounded-lg border px-3 text-sm" value={warehouseId} onChange={(event) => setWarehouseId(event.target.value)}><option value="">Pilih gudang</option>{warehouses.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-              <select className="h-9 w-full rounded-lg border px-3 text-sm" value={productId} onChange={(event) => setProductId(event.target.value)}><option value="">Pilih produk</option>{products.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-              <Input type="number" min="0" placeholder="Qty fisik" value={physicalQty} onChange={(event) => setPhysicalQty(event.target.value)} />
+              {opnameRows.map((row, index) => (
+                <div className="flex gap-2" key={index}>
+                  <select className="h-9 min-w-0 flex-1 rounded-lg border px-3 text-sm" value={row.productId} onChange={(event) => setOpnameRows((current) => current.map((item, rowIndex) => rowIndex === index ? { ...item, productId: event.target.value } : item))}>
+                    <option value="">Pilih produk</option>
+                    {products.filter((item) => !opnameRows.some((selected, selectedIndex) => selectedIndex !== index && selected.productId === item.id)).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  </select>
+                  <Input className="w-28" type="number" min="0" placeholder="Qty fisik" value={row.physicalQty} onChange={(event) => setOpnameRows((current) => current.map((item, rowIndex) => rowIndex === index ? { ...item, physicalQty: event.target.value } : item))} />
+                  {opnameRows.length > 1 && <Button type="button" variant="outline" onClick={() => setOpnameRows((current) => current.filter((_, rowIndex) => rowIndex !== index))}>Hapus</Button>}
+                </div>
+              ))}
+              <Button type="button" variant="secondary" onClick={() => setOpnameRows((current) => [...current, { productId: "", physicalQty: "" }])}>Tambah Produk</Button>
             </div>
-            <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Batal</Button><Button onClick={submit} disabled={saving || !warehouseId || !productId || !physicalQty}>{saving ? "Menyimpan..." : "Simpan Opname"}</Button></DialogFooter>
+            <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Batal</Button><Button onClick={submit} disabled={saving || !warehouseId || !opnameRows.some((row) => row.productId && row.physicalQty !== "")}>{saving ? "Menyimpan..." : "Simpan Opname"}</Button></DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
@@ -87,7 +115,7 @@ export default function OpnamePage() {
             <CardTitle className="text-sm text-slate-500">Total Item Dicek</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">186</div>
+            <div className="text-3xl font-bold">{items.length}</div>
             <p className="text-sm text-slate-500">Produk dalam sesi</p>
           </CardContent>
         </Card>
@@ -96,7 +124,7 @@ export default function OpnamePage() {
             <CardTitle className="text-sm text-slate-500">Sesuai</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">162</div>
+            <div className="text-3xl font-bold">{items.filter((item) => item.status === "Sesuai").length}</div>
             <p className="text-sm text-slate-500">Tanpa selisih</p>
           </CardContent>
         </Card>
@@ -105,7 +133,7 @@ export default function OpnamePage() {
             <CardTitle className="text-sm text-slate-500">Selisih</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">12</div>
+            <div className="text-3xl font-bold">{items.filter((item) => item.status === "Selisih").length}</div>
             <p className="text-sm text-slate-500">Perlu penyesuaian</p>
           </CardContent>
         </Card>
@@ -147,9 +175,9 @@ export default function OpnamePage() {
                   </TableCell>
                   <TableCell className="text-right">
                     <Button variant="outline" size="sm" onClick={async () => {
-                      const result = await approveOpname(item.ref);
+                      const result = await approveOpname(item.opnameRef);
                       setNotice(result.error ?? result.success ?? null);
-                    }} disabled={!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(item.ref)}>Setujui</Button>
+                    }} disabled={!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(item.opnameRef)}>Setujui</Button>
                   </TableCell>
                 </TableRow>
               ))}

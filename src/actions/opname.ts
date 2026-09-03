@@ -6,9 +6,11 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 const opnameSchema = z.object({
   warehouseId: z.string().uuid(),
   title: z.string().trim().min(2).max(120),
-  productId: z.string().uuid(),
-  physicalQty: z.number().nonnegative(),
-  note: z.string().trim().max(500).optional(),
+  items: z.array(z.object({
+    productId: z.string().uuid(),
+    physicalQty: z.number().nonnegative(),
+    note: z.string().trim().max(500).optional(),
+  })).min(1),
 });
 
 async function getClient() {
@@ -27,7 +29,7 @@ export async function createOpname(input: unknown): Promise<{ error?: string; su
     p_warehouse_id: parsed.data.warehouseId,
     p_title: parsed.data.title,
     p_created_by: user.id,
-    p_items: [{ productId: parsed.data.productId, physicalQty: parsed.data.physicalQty, note: parsed.data.note ?? "" }],
+    p_items: parsed.data.items,
   });
   return error ? { error: error.message } : { success: "Sesi opname berhasil dibuat." };
 }
