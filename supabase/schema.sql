@@ -77,6 +77,19 @@ create table "stock_logs" (
   created_at timestamptz default now()
 );
 
+create table "stock_transfers" (
+  id uuid primary key default uuid_generate_v4(),
+  product_id uuid not null references products (id),
+  from_warehouse_id uuid not null references warehouses (id),
+  to_warehouse_id uuid not null references warehouses (id),
+  quantity numeric(12, 3) not null check (quantity > 0),
+  status text not null default 'SELESAI',
+  note text,
+  created_by uuid references user_profiles (id) on delete set null,
+  created_at timestamptz not null default now(),
+  check (from_warehouse_id <> to_warehouse_id)
+);
+
 create table "security_logs" (
   id uuid primary key default uuid_generate_v4(),
   user_id uuid references user_profiles (id) on delete set null,
@@ -165,6 +178,8 @@ create index if not exists idx_sales_user_id on "sales" (user_id);
 create index if not exists idx_sales_created_at on "sales" (created_at);
 create index if not exists idx_sales_payment_method on "sales" (payment_method);
 create index if not exists idx_stock_logs_product_id on "stock_logs" (product_id);
+create index if not exists idx_stock_transfers_created_at on "stock_transfers" (created_at);
+create index if not exists idx_stock_transfers_product_id on "stock_transfers" (product_id);
 create index if not exists idx_security_logs_user_id on "security_logs" (user_id);
 create index if not exists idx_security_logs_created_at on "security_logs" (created_at);
 create index if not exists idx_stock_opnames_warehouse_id on "stock_opnames" (warehouse_id);

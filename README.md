@@ -42,7 +42,7 @@ SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
 NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET=product-images
 ```
 
-4. Pastikan project Supabase sudah menjalankan `supabase/schema.sql`.
+4. Pastikan project Supabase sudah menjalankan `supabase/schema.sql` (termasuk tabel `stock_transfers`).
 5. Jalankan `supabase/seed.sql` untuk mengisi data development gudang, kategori, produk, dan stok.
 6. Pastikan storage bucket `product-images` sudah dibuat dan policy sesuai kebutuhan.
 7. Deploy.
