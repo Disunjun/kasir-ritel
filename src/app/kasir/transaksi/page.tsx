@@ -29,6 +29,7 @@ const fallbackCatalog = [
 
 type CatalogProduct = (typeof fallbackCatalog)[number];
 type CartItem = CatalogProduct & { quantity: number };
+type Warehouse = { id: string; name: string; code: string };
 
 const currency = new Intl.NumberFormat("id-ID", {
   style: "currency",
@@ -51,15 +52,34 @@ export default function TransaksiPage() {
   const [closeShiftDialog, setCloseShiftDialog] = useState(false);
   const [openingCash, setOpeningCash] = useState("0");
   const [actualCash, setActualCash] = useState("");
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState("");
 
   useEffect(() => {
     if (!hasSupabaseConfig()) return;
+
+    const loadWarehouses = async () => {
+      const supabase = createClient();
+      const { data, error } = await supabase.from("warehouses").select("id, name, code").order("code");
+      if (error || !data) {
+        setNotice("Gudang live tidak dapat dimuat.");
+        return;
+      }
+      setWarehouses(data);
+      setSelectedWarehouseId((current) => current || data[0]?.id || "");
+    };
+
+    void loadWarehouses();
+  }, []);
+
+  useEffect(() => {
+    if (!hasSupabaseConfig() || !selectedWarehouseId) return;
 
     const loadProducts = async () => {
       const supabase = createClient();
       const { data, error } = await supabase
         .from("products")
-        .select("id, name, barcode, sale_price, is_active, categories(name), stocks(qty_available)")
+        .select("id, name, barcode, sale_price, is_active, categories(name)")
         .eq("is_active", true)
         .order("name");
 
@@ -68,17 +88,23 @@ export default function TransaksiPage() {
         return;
       }
 
+      const { data: stockRows, error: stockError } = await supabase
+        .from("stocks")
+        .select("product_id, qty_available")
+        .eq("warehouse_id", selectedWarehouseId);
+      if (stockError || !stockRows) {
+        setNotice("Stok gudang live tidak dapat dimuat.");
+        return;
+      }
+      const stockByProduct = new Map(stockRows.map((row) => [row.product_id, Number(row.qty_available ?? 0)]));
       const rows = data.map((item) => {
         const category = Array.isArray(item.categories) ? item.categories[0] : item.categories;
-        const stock = Array.isArray(item.stocks)
-          ? item.stocks.reduce((total, entry) => total + Number(entry.qty_available ?? 0), 0)
-          : 0;
         return {
           id: item.id,
           name: item.name,
           category: category?.name ?? "Umum",
           price: Number(item.sale_price ?? 0),
-          stock,
+          stock: stockByProduct.get(item.id) ?? 0,
           barcode: item.barcode ?? "",
           accent: "from-slate-100 to-slate-200",
         };
@@ -90,7 +116,7 @@ export default function TransaksiPage() {
     };
 
     void loadProducts();
-  }, []);
+  }, [selectedWarehouseId]);
 
   const filteredProducts = useMemo(() => {
     const search = query.toLowerCase();
@@ -173,7 +199,11 @@ export default function TransaksiPage() {
       return;
     }
     setIsSubmitting(true);
-    const result = await openShift(Number(openingCash || 0));
+    if (!selectedWarehouseId) {
+      setNotice("Pilih gudang untuk shift terlebih dahulu.");
+      return;
+    }
+    const result = await openShift(Number(openingCash || 0), selectedWarehouseId);
     setNotice(result.error ?? result.success ?? null);
     setIsSubmitting(false);
     if (!result.error) setOpenShiftDialog(false);
@@ -260,15 +290,34 @@ export default function TransaksiPage() {
             <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle>Buka Shift</DialogTitle>
-                <DialogDescription>Masukkan saldo awal kas sebelum mulai melayani transaksi.</DialogDescription>
+                <DialogDescription>Pilih gudang operasional dan masukkan saldo awal kas sebelum mulai melayani transaksi.</DialogDescription>
               </DialogHeader>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Saldo Awal</label>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Gudang Operasional</label>
+                  <select
+                    className="h-9 w-full rounded-lg border bg-white px-3 text-sm"
+                    value={selectedWarehouseId}
+                    onChange={(event) => {
+                      setSelectedWarehouseId(event.target.value);
+                      setCart([]);
+                    }}
+                    disabled={!warehouses.length}
+                  >
+                    <option value="">Pilih gudang</option>
+                    {warehouses.map((warehouse) => (
+                      <option key={warehouse.id} value={warehouse.id}>{warehouse.code} - {warehouse.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Saldo Awal</label>
                 <Input type="number" min="0" value={openingCash} onChange={(event) => setOpeningCash(event.target.value)} />
+                </div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setOpenShiftDialog(false)}>Batal</Button>
-                <Button onClick={handleOpenShift} disabled={isSubmitting}>
+                <Button onClick={handleOpenShift} disabled={isSubmitting || !selectedWarehouseId}>
                   {isSubmitting ? "Membuka..." : "Buka Shift"}
                 </Button>
               </DialogFooter>
