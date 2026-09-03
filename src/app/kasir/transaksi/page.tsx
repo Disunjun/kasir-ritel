@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { createClient, hasSupabaseConfig } from "@/lib/supabase/client";
+import { createSale, openShift } from "@/actions/sales";
 
 const fallbackCatalog = [
   { id: "P-001", name: "Indomie Goreng Ayam Spesial", category: "Makanan", price: 3500, stock: 48, barcode: "8998000001001", accent: "from-amber-100 to-orange-200" },
@@ -44,6 +45,7 @@ export default function TransaksiPage() {
   const [cashInput, setCashInput] = useState("250000");
   const [openPayment, setOpenPayment] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (!hasSupabaseConfig()) return;
@@ -160,7 +162,18 @@ export default function TransaksiPage() {
     setBarcode("");
   };
 
-  const completeTransaction = () => {
+  const handleOpenShift = async () => {
+    if (!hasSupabaseConfig()) {
+      setNotice("Shift live membutuhkan konfigurasi Supabase.");
+      return;
+    }
+    setIsSubmitting(true);
+    const result = await openShift(0);
+    setNotice(result.error ?? result.success ?? null);
+    setIsSubmitting(false);
+  };
+
+  const completeTransaction = async () => {
     if (!cart.length) {
       setNotice("Keranjang masih kosong.");
       return;
@@ -171,7 +184,29 @@ export default function TransaksiPage() {
       return;
     }
 
-    setNotice(null);
+    if (!hasSupabaseConfig() || cart.some((item) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(item.id))) {
+      setNotice("Transaksi live membutuhkan produk dari database Supabase.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    const result = await createSale({
+      items: cart.map((item) => ({
+        productId: item.id,
+        quantity: item.quantity,
+        unitPrice: item.price,
+        unitCost: Number((item.price * 0.7).toFixed(2)),
+      })),
+      paymentMethod,
+      cashReceived: paymentMethod === "TUNAI" ? cashValue : undefined,
+    });
+    setIsSubmitting(false);
+    if (result.error) {
+      setNotice(result.error);
+      return;
+    }
+
+    setNotice(`${result.success} No. ${result.invoiceNumber}`);
     setCart([]);
     setOpenPayment(false);
     setCashInput(String(Math.ceil(subtotal / 1000) * 1000));
@@ -188,6 +223,9 @@ export default function TransaksiPage() {
           <h1 className="text-2xl font-bold tracking-tight">Transaksi Penjualan</h1>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handleOpenShift} disabled={isSubmitting}>
+            Buka Shift
+          </Button>
           <Button variant="secondary">Jurnal Shift</Button>
           <Dialog open={openPayment} onOpenChange={setOpenPayment}>
             <DialogTrigger render={<Button>Bayar Sekarang</Button>} />
@@ -269,7 +307,9 @@ export default function TransaksiPage() {
 
               <DialogFooter>
                <Button variant="outline" onClick={() => { setNotice(null); setOpenPayment(false); }}>Batal</Button>
-               <Button onClick={completeTransaction}>Selesaikan Transaksi</Button>
+               <Button onClick={completeTransaction} disabled={isSubmitting}>
+                 {isSubmitting ? "Menyimpan..." : "Selesaikan Transaksi"}
+               </Button>
              </DialogFooter>
            </DialogContent>
           </Dialog>        </div>
