@@ -64,6 +64,7 @@ export default function DashboardPage() {
   const [livePayments, setLivePayments] = useState(paymentData);
   const [liveLowStock, setLiveLowStock] = useState(lowStockProducts);
   const [liveBestSelling, setLiveBestSelling] = useState(bestSelling);
+  const [liveMetrics, setLiveMetrics] = useState(metricCards.map((card) => ({ ...card })));
   const [isLive, setIsLive] = useState(false);
 
   useEffect(() => {
@@ -122,6 +123,17 @@ export default function DashboardPage() {
       }
 
       const totalPayments = Array.from(paymentTotals.values()).reduce((sum, value) => sum + value, 0);
+      const totalUnitsSold = Array.from(productTotals.values()).reduce((sum, item) => sum + item.sold, 0);
+      const lowStockCount = stocksResult.data.filter(
+        (stock) => Number(stock.qty_available ?? 0) <= Number(stock.min_stock ?? 0),
+      ).length;
+      const liveRevenue = Array.from(revenueByDay.values()).reduce((sum, value) => sum + value, 0);
+      setLiveMetrics([
+        { ...metricCards[0], value: currency.format(liveRevenue), delta: "-", trend: "up" },
+        { ...metricCards[1], value: String(salesResult.data.length), delta: "-", trend: "up" },
+        { ...metricCards[2], value: String(totalUnitsSold), delta: "-", trend: "up" },
+        { ...metricCards[3], value: `${lowStockCount} item`, delta: "-", trend: lowStockCount ? "down" : "up" },
+      ]);
       const paymentColors: Record<string, string> = { TUNAI: "#2563eb", KARTU: "#16a34a", QRIS: "#f59e0b" };
       setLiveSales(
         Array.from(revenueByDay.entries()).map(([date, revenue]) => ({
@@ -163,6 +175,7 @@ export default function DashboardPage() {
   const displayedPayments = isLive ? livePayments : paymentData;
   const displayedLowStock = isLive ? liveLowStock : lowStockProducts;
   const displayedBestSelling = isLive ? liveBestSelling : bestSelling;
+  const displayedMetrics = isLive ? liveMetrics : metricCards;
 
   return (
     <div className="space-y-6">
@@ -175,7 +188,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {metricCards.map((card) => (
+        {displayedMetrics.map((card) => (
           <Card key={card.title}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-slate-500">{card.title}</CardTitle>
