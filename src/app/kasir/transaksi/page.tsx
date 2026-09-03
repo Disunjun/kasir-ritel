@@ -46,6 +46,7 @@ export default function TransaksiPage() {
   const [openPayment, setOpenPayment] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [externalPaymentStatus, setExternalPaymentStatus] = useState<"IDLE" | "PROCESSING" | "PAID">("IDLE");
 
   useEffect(() => {
     if (!hasSupabaseConfig()) return;
@@ -184,6 +185,11 @@ export default function TransaksiPage() {
       return;
     }
 
+    if (paymentMethod !== "TUNAI" && externalPaymentStatus !== "PAID") {
+      setNotice(`Konfirmasi pembayaran ${paymentMethod} terlebih dahulu.`);
+      return;
+    }
+
     if (!hasSupabaseConfig() || cart.some((item) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(item.id))) {
       setNotice("Transaksi live membutuhkan produk dari database Supabase.");
       return;
@@ -209,7 +215,17 @@ export default function TransaksiPage() {
     setNotice(`${result.success} No. ${result.invoiceNumber}`);
     setCart([]);
     setOpenPayment(false);
+    setExternalPaymentStatus("IDLE");
     setCashInput(String(Math.ceil(subtotal / 1000) * 1000));
+  };
+
+  const simulateExternalPayment = () => {
+    setExternalPaymentStatus("PROCESSING");
+    setNotice(`Memproses pembayaran ${paymentMethod}...`);
+    window.setTimeout(() => {
+      setExternalPaymentStatus("PAID");
+      setNotice(`Pembayaran ${paymentMethod} terkonfirmasi (simulasi MVP).`);
+    }, 700);
   };
 
   return (
@@ -256,7 +272,11 @@ export default function TransaksiPage() {
                     <button
                       key={method.key}
                       type="button"
-                      onClick={() => setPaymentMethod(method.key as "TUNAI" | "KARTU" | "QRIS")}
+                      onClick={() => {
+                        setPaymentMethod(method.key as "TUNAI" | "KARTU" | "QRIS");
+                        setExternalPaymentStatus("IDLE");
+                        setNotice(null);
+                      }}
                       className={`flex flex-col items-center justify-center gap-2 rounded-xl border px-3 py-3 text-sm font-medium transition ${
                         paymentMethod === method.key
                           ? "border-primary bg-primary/5 text-primary"
@@ -299,8 +319,24 @@ export default function TransaksiPage() {
                 )}
 
                 {paymentMethod !== "TUNAI" && (
-                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-6 text-center text-sm text-slate-500">
-                    Metode {paymentMethod} diproses secara dummy sesuai flow MVP.
+                  <div className="space-y-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-5 text-center text-sm text-slate-500">
+                    <p>
+                      {externalPaymentStatus === "PAID"
+                        ? `Pembayaran ${paymentMethod} berhasil dikonfirmasi.`
+                        : "Tidak ada gateway eksternal pada MVP. Gunakan simulasi event pembayaran."}
+                    </p>
+                    <Button
+                      type="button"
+                      variant={externalPaymentStatus === "PAID" ? "secondary" : "default"}
+                      onClick={simulateExternalPayment}
+                      disabled={externalPaymentStatus === "PROCESSING" || externalPaymentStatus === "PAID"}
+                    >
+                      {externalPaymentStatus === "PROCESSING"
+                        ? "Memproses..."
+                        : externalPaymentStatus === "PAID"
+                          ? "Pembayaran Terkonfirmasi"
+                          : `Simulasikan Pembayaran ${paymentMethod}`}
+                    </Button>
                   </div>
                 )}
               </div>
