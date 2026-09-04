@@ -6,15 +6,15 @@ import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const DEMO_USERS: Record<string, { password: string; name: string; role: "ADMIN" | "KASIR" }> = {
+  "demo@kasirritel.com": {
+    password: "demo123",
+    name: "Demo User",
+    role: "KASIR",
+  },
   "admin@kasirritel.com": {
     password: "admin123",
     name: "Admin KasirRitel",
     role: "ADMIN",
-  },
-  "kasir@kasirritel.com": {
-    password: "kasir123",
-    name: "Kasir Toko",
-    role: "KASIR",
   },
 };
 
@@ -95,7 +95,7 @@ export async function signIn(formData: FormData): Promise<{ error?: string } | v
         sameSite: "lax",
         maxAge: 60 * 60 * 8,
       });
-      redirect("/dashboard");
+      return redirect("/dashboard");
     }
 
     return {
@@ -106,11 +106,29 @@ export async function signIn(formData: FormData): Promise<{ error?: string } | v
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error || !data.user) {
+    // Fallback to demo users if Supabase auth fails (useful for testing with demo credentials even if not in DB)
+    const demoUser = DEMO_USERS[email.toLowerCase()];
+    if (demoUser && demoUser.password === password) {
+      const cookieStore = await cookies();
+      cookieStore.set("kasirritel-demo-user", email, {
+        httpOnly: true,
+        path: "/",
+        sameSite: "lax",
+        maxAge: 60 * 60 * 8,
+      });
+      cookieStore.set("kasirritel-role", demoUser.role, {
+        httpOnly: true,
+        path: "/",
+        sameSite: "lax",
+        maxAge: 60 * 60 * 8,
+      });
+      return redirect("/dashboard");
+    }
     return { error: "Email atau password tidak valid." };
   }
 
   await syncUserProfile(supabase, data.user, resolveRoleFromEmail(email));
-  redirect("/dashboard");
+  return redirect("/dashboard");
 }
 
 export async function signUp(formData: FormData): Promise<{ error?: string } | void> {
