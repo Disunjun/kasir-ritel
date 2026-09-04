@@ -31,5 +31,12 @@ export async function getCurrentUserRole(): Promise<UserRole | null> {
     return profile.role as UserRole;
   }
 
+  // Fallback for demo users or users without profile
+  const cookieStore = await cookies();
+  const cookieRole = cookieStore.get("kasirritel-role")?.value;
+  if (cookieRole === "ADMIN" || cookieRole === "KASIR") {
+    return cookieRole as UserRole;
+  }
+
   return user.email?.toLowerCase().includes("admin") ? "ADMIN" : "KASIR";
 }

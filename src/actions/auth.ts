@@ -127,7 +127,17 @@ export async function signIn(formData: FormData): Promise<{ error?: string } | v
     return { error: "Email atau password tidak valid." };
   }
 
-  await syncUserProfile(supabase, data.user, resolveRoleFromEmail(email));
+  const resolvedRole = resolveRoleFromEmail(email);
+  await syncUserProfile(supabase, data.user, resolvedRole);
+
+  const cookieStore = await cookies();
+  cookieStore.set("kasirritel-role", resolvedRole, {
+    httpOnly: true,
+    path: "/",
+    sameSite: "lax",
+    maxAge: 60 * 60 * 8,
+  });
+
   return redirect("/dashboard");
 }
 

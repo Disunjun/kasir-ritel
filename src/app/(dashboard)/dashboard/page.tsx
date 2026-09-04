@@ -90,7 +90,11 @@ export default function DashboardPage() {
           .limit(20),
       ]);
 
-      if (salesResult.error || stocksResult.error || !salesResult.data || !stocksResult.data) return;
+      if (salesResult.error || stocksResult.error || !salesResult.data || !stocksResult.data) {
+        console.error("Dashboard load error:", salesResult.error || stocksResult.error);
+        setIsLive(false);
+        return;
+      }
 
       const dayLabels = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
       const revenueByDay = new Map<string, number>();
