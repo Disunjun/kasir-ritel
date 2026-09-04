@@ -36,6 +36,9 @@ function LoginForm() {
     setError(null);
 
     const formData = new FormData(e.currentTarget);
+    formData.set("email", email);
+    formData.set("password", password);
+
     const result = await signIn(formData);
 
     if (result?.error) {
