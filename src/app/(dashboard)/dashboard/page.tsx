@@ -17,6 +17,7 @@ import { ArrowDownRight, ArrowUpRight, DollarSign, ShoppingBag, TrendingUp, Ware
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient, hasSupabaseConfig } from "@/lib/supabase/client";
+import { DashboardSkeleton } from "@/components/dashboard/dashboard-skeleton";
 
 const salesData = [
   { day: "Sen", revenue: 1200000 },
@@ -66,6 +67,8 @@ export default function DashboardPage() {
   const [liveBestSelling, setLiveBestSelling] = useState(bestSelling);
   const [liveMetrics, setLiveMetrics] = useState(metricCards.map((card) => ({ ...card })));
   const [isLive, setIsLive] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!hasSupabaseConfig()) return;
@@ -92,7 +95,9 @@ export default function DashboardPage() {
 
       if (salesResult.error || stocksResult.error || !salesResult.data || !stocksResult.data) {
         console.error("Dashboard load error:", salesResult.error || stocksResult.error);
+        setLoadError("Gagal memuat data dashboard. Silakan coba lagi.");
         setIsLive(false);
+        setIsLoading(false);
         return;
       }
 
@@ -169,6 +174,7 @@ export default function DashboardPage() {
           }),
       );
       setIsLive(true);
+      setIsLoading(false);
     };
 
     void loadDashboard();
@@ -183,15 +189,23 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <p className="text-sm font-medium text-primary">Overview</p>
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard Admin</h1>
+      {isLoading && <DashboardSkeleton />}
+      {!isLoading && loadError && (
+        <div className="rounded-lg bg-red-50 p-4 text-sm text-red-800">
+          {loadError}
         </div>
-        <Badge variant="secondary">Update: Hari ini</Badge>
-      </div>
+      )}
+      {!isLoading && !loadError && (
+        <div>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-primary">Overview</p>
+              <h1 className="text-2xl font-bold tracking-tight">Dashboard Admin</h1>
+            </div>
+            <Badge variant="secondary">Update: Hari ini</Badge>
+          </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {displayedMetrics.map((card) => (
           <Card key={card.title}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -202,15 +216,14 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{card.value}</div>
-              <div className="mt-2 flex items-center gap-2 text-sm">
-                {card.trend === "up" ? (
-                  <ArrowUpRight className="h-4 w-4 text-emerald-600" />
-                ) : (
-                  <ArrowDownRight className="h-4 w-4 text-amber-600" />
-                )}
-                <span className={card.trend === "up" ? "text-emerald-600" : "text-amber-600"}>{card.delta}</span>
-                <span className="text-slate-500">vs minggu lalu</span>
-              </div>
+              {isLoading && <div className="mt-2 h-4 w-20 animate-pulse rounded bg-slate-200"></div>}
+              {!isLoading && (
+                <div className="mt-2 flex items-center gap-2 text-sm">
+                  <span className={card.trend === "up" ? "text-green-600" : "text-red-600"}>
+                    {card.delta}
+                  </span>
+                </div>
+              )}
             </CardContent>
           </Card>
         ))}
@@ -326,6 +339,8 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+        </div>
+      )}
     </div>
   );
 }
