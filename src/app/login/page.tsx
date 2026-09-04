@@ -8,12 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Mail, Lock, LogIn } from "lucide-react";
+import { Mail, Lock, LogIn, Eye, EyeOff } from "lucide-react";
 import { signIn } from "@/actions/auth";
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="flex min-h-screen items-center justify-center">Memuat halaman login...</div>}>
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-slate-50">Memuat halaman login...</div>}>
       <LoginForm />
     </Suspense>
   );
@@ -23,12 +23,15 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const successMessage = searchParams.get("registered") === "1" ? "Akun berhasil dibuat. Silakan masuk dengan akun Anda." : null;
+  const errorMessage = searchParams.get("error") === "1" ? "Email atau password tidak valid." : null;
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (isLoading) return;
     setIsLoading(true);
     setError(null);
 
@@ -56,9 +59,9 @@ function LoginForm() {
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
-            {error && (
+            {(error || errorMessage) && (
               <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
+                <AlertDescription>{error || errorMessage}</AlertDescription>
               </Alert>
             )}
             {successMessage && (
@@ -89,14 +92,28 @@ function LoginForm() {
                 <Input
                   id="password"
                   name="password"
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10"
+                  className="pl-10 pr-10"
                   required
                 />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  className="absolute right-3 top-3 h-4 w-4 text-slate-400 hover:text-slate-600"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <Link href="/reset-password" className="text-primary hover:underline">
+                Lupa password?
+              </Link>
             </div>
             <div className="text-center text-sm text-muted-foreground">
               <p>Silakan masuk dengan akun Anda.</p>

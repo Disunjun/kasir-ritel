@@ -99,8 +99,7 @@ export async function signIn(formData: FormData): Promise<{ error?: string } | v
     }
 
     return {
-      error:
-        "Supabase belum dikonfigurasi. Gunakan demo credential: admin@kasirritel.com / admin123 atau kasir@kasirritel.com / kasir123.",
+      error: "Email atau password tidak valid.",
     };
   }
 
@@ -176,4 +175,30 @@ export async function signOut() {
   cookieStore.delete("kasirritel-role");
 
   redirect("/login");
+}
+
+export async function resetPassword(formData: FormData): Promise<{ error?: string; success?: string } | void> {
+  const rawEmail = String(formData.get("email") ?? "").trim();
+
+  const parsed = z.string().email("Email tidak valid.").safeParse(rawEmail);
+
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Email tidak valid." };
+  }
+
+  const supabase = await createServerSupabaseClient();
+
+  if (!supabase) {
+    return { error: "Email atau password tidak valid." };
+  }
+
+  const { error } = await supabase.auth.resetPasswordForEmail(parsed.data, {
+    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/reset-password/confirm`,
+  });
+
+  if (error) {
+    return { error: "Email atau password tidak valid." };
+  }
+
+  return { success: "Link reset password telah dikirim ke email Anda." };
 }
