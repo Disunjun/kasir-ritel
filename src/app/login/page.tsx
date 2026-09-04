@@ -21,8 +21,8 @@ export default function LoginPage() {
 
 function LoginForm() {
   const searchParams = useSearchParams();
-  const [email, setEmail] = useState("admin@kasirritel.com");
-  const [password, setPassword] = useState("admin123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const successMessage = searchParams.get("registered") === "1" ? "Akun berhasil dibuat. Silakan masuk dengan akun Anda." : null;
@@ -99,9 +99,7 @@ function LoginForm() {
               </div>
             </div>
             <div className="text-center text-sm text-muted-foreground">
-              <p>Demo Mode: Email dan password sudah terisi otomatis</p>
-              <p className="mt-1">Admin: admin@kasirritel.com / admin123</p>
-              <p>Kasir: kasir@kasirritel.com / kasir123</p>
+              <p>Silakan masuk dengan akun Anda.</p>
             </div>
           </CardContent>
           <CardFooter className="flex flex-col space-y-3">

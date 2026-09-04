@@ -107,7 +107,7 @@ export async function signIn(formData: FormData): Promise<{ error?: string } | v
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error || !data.user) {
-    return { error: error?.message ?? "Login gagal. Silakan coba lagi." };
+    return { error: "Email atau password tidak valid." };
   }
 
   await syncUserProfile(supabase, data.user, resolveRoleFromEmail(email));
